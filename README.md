@@ -2,7 +2,7 @@
 
 "A production-inspired payment processing and settlement backend built with **TypeScript, Node.js, Express, and PostgreSQL**. Implements real-world fintech patterns including idempotency keys, automatic settlement splitting, partial refunds, webhook events, and comprehensive analytics.
 
-🔗 **Live API:** https://payflow-api-n3o5.onrender.com
+🔗 **Live API:** (https://payflow-api-n3o5.onrender.com/api/health)
 📖 **API Docs:** https://payflow-api-n3o5.onrender.com/api/docs
 
 ---
