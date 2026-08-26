@@ -40,6 +40,16 @@ app.use("/api/settlements", settlementRoutes);
 app.use("/api/analytics", analyticsRoutes);
 app.use("/api/webhooks", webhookRoutes);
 
+app.get("/", (req: Request, res: Response) => {
+  res.json({
+    name: "PayFlow API",
+    version: "1.0.0",
+    status: "operational",
+    documentation: "/api/docs",
+    health: "/api/health"
+  });
+});
+
 // health check
 app.get("/api/health", async (req: Request, res: Response): Promise<void> => {
   try {
