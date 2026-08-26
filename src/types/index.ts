@@ -1,7 +1,7 @@
 import { Request } from "express";
 
-export interface Merchant{
-     id: number;
+export interface Merchant {
+  id: number;
   name: string;
   email: string;
   api_key: string;
@@ -11,34 +11,8 @@ export interface Merchant{
   created_at: Date;
 }
 
-export interface Payment{
-     id: number;
-  merchant_id: number;
-  customer_id?: number;
-  idempotency_key?: string;
-  amount: number;
-  currency: string;
-  status: "created" | "processing" | "captured" | "failed" | "refunded" | "partially_refunded";
-  failure_reason?: string;
-  payment_method: "upi" | "card" | "netbanking" | "wallet";
-  created_at: Date;
-  captured_at?: Date;
-}
-
-export interface Settlement{
-     id: number;
-  payment_id: number;
-  merchant_id: number;
-  gross_amount: number;
-  platform_fee: number;
-  tax_amount: number;
-  net_amount: number;
-  status: "pending" | "processing" | "settled" | "failed";
-  settled_at?: Date;
-}
-
-export interface MerchantRequest extends Request{
-    merchant?: Merchant;
+export interface MerchantRequest extends Request {
+  merchant?: Merchant;
 }
 
 export interface RegisterBody {
