@@ -97,6 +97,3 @@ npm run dev
 - GitHub: [github.com/yochna](https://github.com/yochna)
 - Email: YochnaRao12@gmail.com
 
-## 💰 Settlement Math
-
-On every captured payment:
