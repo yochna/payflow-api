@@ -1,0 +1,37 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: payflow
+    ports:
+      # 5433 on the host so it never clashes with a local PostgreSQL on 5432
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Applies schema.sql automatically on first boot.
+      - ./schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PORT: "5001"
+      DATABASE_URL: postgres://postgres:postgres@db:5432/payflow
+      PGSSLMODE: disable
+      JWT_SECRET: local_dev_jwt_secret
+      REFRESH_SECRET: local_dev_refresh_secret
+      CLIENT_URL: http://localhost:3000
+    ports:
+      - "5001:5001"
+
+volumes:
+  pgdata:
