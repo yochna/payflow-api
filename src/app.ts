@@ -1,6 +1,7 @@
 import dotenv from "dotenv";
 dotenv.config();
 
+import path from "path";
 import express, { Application, Request, Response } from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -27,6 +28,9 @@ app.use(
   })
 );
 app.use(express.json({ limit: "10kb" }));
+
+// landing page (public/index.html)
+app.use(express.static(path.join(__dirname, "..", "public")));
 
 // rate limiting (disabled in tests so suites can run quickly)
 if (process.env.NODE_ENV !== "test") {
@@ -60,16 +64,6 @@ app.use("/api/refunds", refundRoutes);
 app.use("/api/settlements", settlementRoutes);
 app.use("/api/analytics", analyticsRoutes);
 app.use("/api/webhooks", webhookRoutes);
-
-app.get("/", (req: Request, res: Response) => {
-  res.json({
-    name: "PayFlow API",
-    version: "1.0.0",
-    status: "operational",
-    documentation: "/api/docs",
-    health: "/api/health",
-  });
-});
 
 // health check
 app.get("/api/health", async (req: Request, res: Response): Promise<void> => {

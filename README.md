@@ -6,6 +6,10 @@
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1.svg?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED.svg?logo=docker&logoColor=white)](https://www.docker.com/)
 
+<p align="center">
+  <img src="assets/social-preview.png" alt="PayFlow — Payment Processing & Settlement Engine" width="720" />
+</p>
+
 > A production-inspired payment processing REST API built with **TypeScript, Node.js, Express, and PostgreSQL**.
 
 PayFlow is a backend payment-processing system designed to model a merchant payment lifecycle from **payment creation and capture to settlement and refunds**.
@@ -18,7 +22,8 @@ The project focuses on real-world backend engineering concepts such as **idempot
 
 | Resource                  | Link                                             |
 | ------------------------- | ------------------------------------------------ |
-| 🌐 Live API               | https://payflow-api-n3o5.onrender.com            |
+| 🖥️ Landing Page           | https://payflow-api-n3o5.onrender.com            |
+| 🌐 Live API               | https://payflow-api-n3o5.onrender.com/api        |
 | ❤️ Health Check           | https://payflow-api-n3o5.onrender.com/api/health |
 | 📖 Swagger / OpenAPI Docs | https://payflow-api-n3o5.onrender.com/api/docs   |
 | 💻 GitHub Repository      | https://github.com/yochna/payflow-api            |
@@ -613,8 +618,7 @@ If one part of a transactional operation fails, the transaction can be rolled ba
 payflow-api/
 │
 ├── src/
-│   ├── app.ts
-│   │   └── Express application (importable — also used by tests)
+│   ├── app.ts            ── Express application (importable — also used by tests)
 │   ├── index.ts
 │   │   └── Entry point that starts the HTTP server
 │   ├── config/
@@ -642,6 +646,12 @@ payflow-api/
 │   ├── setup.ts                ── test environment variables
 │   └── helpers/
 │       └── config.ts
+│
+├── public/
+│   └── index.html       ── landing page served at the API root
+│
+├── assets/
+│   └── social-preview.png ── repo banner
 │
 ├── schema.sql          ── PostgreSQL database schema
 ├── package.json        ── dependencies and scripts
