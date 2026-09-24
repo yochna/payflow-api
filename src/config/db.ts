@@ -8,9 +8,7 @@ const pool = new Pool(
         connectionString: process.env.DATABASE_URL,
         // SSL is enabled by default to keep Render/RDS deploys working out of
         // the box. Set PGSSLMODE=disable for local Docker/plain connections.
-        ...(process.env.PGSSLMODE === "disable"
-          ? {}
-          : { ssl: { rejectUnauthorized: false } }),
+        ...(process.env.PGSSLMODE === "disable" ? {} : { ssl: { rejectUnauthorized: false } }),
       }
     : {
         host: process.env.DB_HOST,

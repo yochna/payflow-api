@@ -16,6 +16,23 @@ let webhookPort: number;
 let receivedRawBody = "";
 let receivedSignature: string | null = null;
 
+interface WebhookEventRow {
+  event_type: string;
+  status: string;
+  attempts: number;
+}
+
+interface SettlementRow {
+  id: number;
+  payment_id: string;
+  status: string;
+  net_amount: number;
+}
+
+interface MethodRow {
+  payment_method: string;
+}
+
 describe("health", () => {
   it("reports the API and database as up", async () => {
     const res = await api.get("/api/health");
@@ -79,9 +96,7 @@ describe("auth", () => {
   });
 
   it("/me returns the merchant without leaking secrets", async () => {
-    const res = await api
-      .get("/api/auth/me")
-      .set("Authorization", `Bearer ${accessToken}`);
+    const res = await api.get("/api/auth/me").set("Authorization", `Bearer ${accessToken}`);
     expect(res.status).toBe(200);
     expect(res.body.data.email).toBe(email);
     expect(res.body.data).not.toHaveProperty("password");
@@ -123,16 +138,13 @@ describe("payments", () => {
   it("creates a payment and returns the same one for a repeated idempotency key", async () => {
     const idemKey = `idem_${Date.now()}`;
 
-    const first = await api
-      .post("/api/payments/create")
-      .set("x-api-key", apiKey)
-      .send({
-        amount: 1000,
-        payment_method: "upi",
-        customer_name: "Akhil",
-        customer_email: "akhil@test.com",
-        idempotency_key: idemKey,
-      });
+    const first = await api.post("/api/payments/create").set("x-api-key", apiKey).send({
+      amount: 1000,
+      payment_method: "upi",
+      customer_name: "Akhil",
+      customer_email: "akhil@test.com",
+      idempotency_key: idemKey,
+    });
     expect(first.status).toBe(201);
     expect(first.body.data.status).toBe("created");
 
@@ -145,9 +157,7 @@ describe("payments", () => {
   });
 
   it("can list payments with JWT auth and default pagination", async () => {
-    const res = await api
-      .get("/api/payments")
-      .set("Authorization", `Bearer ${accessToken}`);
+    const res = await api.get("/api/payments").set("Authorization", `Bearer ${accessToken}`);
     expect(res.status).toBe(200);
     expect(res.body.pagination.totalPayments).toBeGreaterThanOrEqual(1);
   });
@@ -179,9 +189,7 @@ describe("capture, settlement & webhooks", () => {
       .send({ amount: 1000, payment_method: "card" });
     paymentId = created.body.data.id;
 
-    const res = await api
-      .post(`/api/payments/capture/${paymentId}`)
-      .set("x-api-key", apiKey);
+    const res = await api.post(`/api/payments/capture/${paymentId}`).set("x-api-key", apiKey);
 
     expect(res.status).toBe(200);
     expect(res.body.data.payment.status).toBe("captured");
@@ -204,33 +212,25 @@ describe("capture, settlement & webhooks", () => {
   });
 
   it("refuses to capture a payment twice", async () => {
-    const res = await api
-      .post(`/api/payments/capture/${paymentId}`)
-      .set("x-api-key", apiKey);
+    const res = await api.post(`/api/payments/capture/${paymentId}`).set("x-api-key", apiKey);
     expect(res.status).toBe(400);
     expect(res.body.message).toMatch(/cannot be captured/i);
   });
 
   it("exposes the delivered webhook event in the log", async () => {
-    const res = await api
-      .get("/api/webhooks")
-      .set("Authorization", `Bearer ${accessToken}`);
+    const res = await api.get("/api/webhooks").set("Authorization", `Bearer ${accessToken}`);
     expect(res.status).toBe(200);
-    const event = res.body.data.find(
-      (w: any) => w.event_type === "payment.captured"
-    );
+    const event = res.body.data.find((w: WebhookEventRow) => w.event_type === "payment.captured");
     expect(event).toBeTruthy();
     expect(event.status).toBe("delivered");
     expect(event.attempts).toBeGreaterThan(0);
   });
 
   it("marks a pending settlement as settled", async () => {
-    const list = await api
-      .get("/api/settlements")
-      .set("Authorization", `Bearer ${accessToken}`);
+    const list = await api.get("/api/settlements").set("Authorization", `Bearer ${accessToken}`);
     expect(list.status).toBe(200);
     const pending = list.body.data.find(
-      (s: any) => s.payment_id === paymentId && s.status === "pending"
+      (s: SettlementRow) => s.payment_id === paymentId && s.status === "pending"
     );
     expect(pending).toBeTruthy();
     settlementId = pending.id;
@@ -269,9 +269,7 @@ describe("refunds", () => {
       .send({ amount: 1000, payment_method: "upi" });
     const paymentId = created.body.data.id;
 
-    await api
-      .post(`/api/payments/capture/${paymentId}`)
-      .set("x-api-key", apiKey);
+    await api.post(`/api/payments/capture/${paymentId}`).set("x-api-key", apiKey);
 
     const partial = await api
       .post("/api/refunds")
@@ -303,9 +301,7 @@ describe("refunds", () => {
       .send({ amount: 500, payment_method: "card" });
     const paymentId = created.body.data.id;
 
-    await api
-      .post(`/api/payments/capture/${paymentId}`)
-      .set("x-api-key", apiKey);
+    await api.post(`/api/payments/capture/${paymentId}`).set("x-api-key", apiKey);
 
     await api
       .post("/api/refunds")
@@ -320,9 +316,7 @@ describe("refunds", () => {
   });
 
   it("lists refunds for the merchant", async () => {
-    const res = await api
-      .get("/api/refunds")
-      .set("Authorization", `Bearer ${accessToken}`);
+    const res = await api.get("/api/refunds").set("Authorization", `Bearer ${accessToken}`);
     expect(res.status).toBe(200);
     expect(res.body.pagination.totalRefunds).toBeGreaterThanOrEqual(1);
   });
@@ -359,9 +353,81 @@ describe("analytics", () => {
       .get("/api/analytics/payment-methods")
       .set("Authorization", `Bearer ${accessToken}`);
     expect(res.status).toBe(200);
-    expect(res.body.data.some((m: any) => m.payment_method === "upi")).toBe(true);
+    expect(res.body.data.some((m: MethodRow) => m.payment_method === "upi")).toBe(true);
   });
 });
+
+describe("webhook retry", () => {
+  let retryToken = "";
+  let retryApiKey = "";
+  let deadPaymentId = "";
+
+  it("registers a merchant with a dead webhook endpoint", async () => {
+    const deadPort = await getClosedPort();
+    const res = await api.post("/api/auth/register").send({
+      name: "Dead Endpoint Merchant",
+      email: `dead_${Date.now()}@payflow.test`,
+      password: "test123",
+      webhook_url: `http://127.0.0.1:${deadPort}/webhook`,
+    });
+    expect(res.status).toBe(201);
+    retryToken = res.body.data.accessToken;
+    retryApiKey = res.body.data.merchant.api_key;
+
+    const created = await api
+      .post("/api/payments/create")
+      .set("x-api-key", retryApiKey)
+      .send({ amount: 500, payment_method: "upi", idempotency_key: `dead_${Date.now()}` });
+    expect(created.status).toBe(201);
+    deadPaymentId = created.body.data.id;
+  });
+
+  it("records a failed delivery to the dead endpoint", async () => {
+    const res = await api
+      .post(`/api/payments/capture/${deadPaymentId}`)
+      .set("x-api-key", retryApiKey);
+    expect(res.status).toBe(200);
+
+    const events = await api.get("/api/webhooks").set("Authorization", `Bearer ${retryToken}`);
+    const ev = events.body.data.find((e: WebhookEventRow) => e.event_type === "payment.captured");
+    expect(ev).toBeTruthy();
+    expect(ev.status).toBe("failed");
+  });
+
+  it("retries the failed webhook and records another attempt", async () => {
+    const events = await api.get("/api/webhooks").set("Authorization", `Bearer ${retryToken}`);
+    const ev = events.body.data.find((e: WebhookEventRow) => e.event_type === "payment.captured");
+
+    const res = await api
+      .post(`/api/webhooks/retry/${ev.id}`)
+      .set("Authorization", `Bearer ${retryToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.data.delivered).toBe(false);
+    expect(res.body.data.attempts).toBeGreaterThan(ev.attempts);
+  });
+
+  it("rejects retrying a webhook from another merchant", async () => {
+    const events = await api.get("/api/webhooks").set("Authorization", `Bearer ${retryToken}`);
+    const ev = events.body.data.find((e: WebhookEventRow) => e.event_type === "payment.captured");
+
+    const res = await api
+      .post(`/api/webhooks/retry/${ev.id}`)
+      .set("Authorization", `Bearer ${accessToken}`);
+    expect(res.status).toBe(404);
+  });
+});
+
+// Find a port with nothing listening on it so webhook delivery fails fast.
+async function getClosedPort(): Promise<number> {
+  const server = await new Promise<Server>((resolve, reject) => {
+    const s = createServer();
+    s.once("error", reject);
+    s.listen(0, () => resolve(s));
+  });
+  const port = (server.address() as AddressInfo).port;
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+  return port;
+}
 
 beforeAll(async () => {
   // Local receiver that simulates a merchant's webhook endpoint.

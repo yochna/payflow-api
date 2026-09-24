@@ -2,6 +2,7 @@ import { Router, Response } from "express";
 import crypto from "crypto";
 import pool from "../config/db";
 import { protect } from "../middleware/auth";
+import { ApiError, asyncHandler } from "../middleware/error";
 import { MerchantRequest } from "../types";
 
 const router = Router();
@@ -38,10 +39,7 @@ export const deliverWebhook = async (
       delivered_at: new Date().toISOString(),
     });
 
-    const signature = crypto
-      .createHmac("sha256", merchant.api_secret)
-      .update(body)
-      .digest("hex");
+    const signature = crypto.createHmac("sha256", merchant.api_secret).update(body).digest("hex");
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), DELIVERY_TIMEOUT_MS);
@@ -113,11 +111,13 @@ export const triggerWebhook = async (
 // GET /api/webhooks
 // All webhook events for merchant
 // ─────────────────────────────────────────
-router.get("/", protect, async (req: MerchantRequest, res: Response): Promise<void> => {
-  try {
+router.get(
+  "/",
+  protect,
+  asyncHandler(async (req: MerchantRequest, res: Response) => {
     const merchantId = req.merchant!.id;
-    const page = parseInt(req.query.page as string || "1");
-    const limit = parseInt(req.query.limit as string || "10");
+    const page = parseInt((req.query.page as string) || "1");
+    const limit = parseInt((req.query.limit as string) || "10");
     const offset = (page - 1) * limit;
     const status = req.query.status as string;
 
@@ -132,7 +132,8 @@ router.get("/", protect, async (req: MerchantRequest, res: Response): Promise<vo
     }
 
     const totalResult = await pool.query(
-      `SELECT COUNT(*) FROM webhook_events ${whereClause}`, params
+      `SELECT COUNT(*) FROM webhook_events ${whereClause}`,
+      params
     );
     const total = parseInt(totalResult.rows[0].count);
 
@@ -147,20 +148,19 @@ router.get("/", protect, async (req: MerchantRequest, res: Response): Promise<vo
     res.json({
       success: true,
       data: result.rows,
-      pagination: { currentPage: page, totalPages: Math.ceil(total / limit), total }
+      pagination: { currentPage: page, totalPages: Math.ceil(total / limit), total },
     });
-
-  } catch (err) {
-    if (err instanceof Error) res.status(500).json({ success: false, message: err.message });
-  }
-});
+  })
+);
 
 // ─────────────────────────────────────────
 // POST /api/webhooks/retry/:id
 // Manually retry a failed webhook (real HTTP delivery)
 // ─────────────────────────────────────────
-router.post("/retry/:id", protect, async (req: MerchantRequest, res: Response): Promise<void> => {
-  try {
+router.post(
+  "/retry/:id",
+  protect,
+  asyncHandler(async (req: MerchantRequest, res: Response) => {
     const { id } = req.params;
     const merchantId = req.merchant!.id;
 
@@ -170,36 +170,29 @@ router.post("/retry/:id", protect, async (req: MerchantRequest, res: Response): 
     );
 
     if (webhookResult.rows.length === 0) {
-      res.status(404).json({ success: false, message: "Webhook event not found" });
-      return;
+      throw new ApiError("Webhook event not found", 404);
     }
 
     const webhook = webhookResult.rows[0];
 
     if (webhook.status === "delivered") {
-      res.status(400).json({ success: false, message: "Webhook already delivered" });
-      return;
+      throw new ApiError("Webhook already delivered", 400);
     }
 
     await deliverWebhook(merchantId, Number(id), webhook.event_type, webhook.payload);
 
-    const updated = await pool.query(
-      "SELECT * FROM webhook_events WHERE id = $1",
-      [id]
-    );
+    const updated = await pool.query("SELECT * FROM webhook_events WHERE id = $1", [id]);
     const event = updated.rows[0];
 
     res.json({
       success: true,
-      message: event.status === "delivered"
-        ? "Webhook delivered successfully"
-        : "Delivery failed — scheduled for retry",
+      message:
+        event.status === "delivered"
+          ? "Webhook delivered successfully"
+          : "Delivery failed — scheduled for retry",
       data: { id, delivered: event.status === "delivered", attempts: event.attempts },
     });
-
-  } catch (err) {
-    if (err instanceof Error) res.status(500).json({ success: false, message: err.message });
-  }
-});
+  })
+);
 
 export default router;

@@ -1,64 +1,67 @@
-import { Router, Response } from "express";
+import { Router, Response, NextFunction } from "express";
 import pool from "../config/db";
 import { protect } from "../middleware/auth";
+import { ApiError, asyncHandler } from "../middleware/error";
 import { MerchantRequest } from "../types";
 
 const router = Router();
 
-// get //api/settlements
-// all settlements for merchnat
+// GET /api/settlements
+// All settlements for merchant
+router.get(
+  "/",
+  protect,
+  asyncHandler(async (req: MerchantRequest, res: Response) => {
+    const merchantId = req.merchant!.id;
+    const page = parseInt((req.query.page as string) || "1");
+    const limit = parseInt((req.query.limit as string) || "10");
+    const offset = (page - 1) * limit;
+    const status = req.query.status as string;
 
-router.get("/",protect,async(req:MerchantRequest,res:Response):Promise<void>=>{
-    try{
-        const merchantId = req.merchant!.id;
-        const page = parseInt(req.query.page as string ||"1");
-        const limit = parseInt(req.query.limit as string || "10");
-        const offset = (page -1)*limit;
-        const status = req.query.status as string;
+    let whereClause = "WHERE s.merchant_id = $1";
+    const params: (string | number)[] = [merchantId];
+    let paramCount = 1;
 
+    if (status) {
+      paramCount++;
+      whereClause += ` AND s.status = $${paramCount}`;
+      params.push(status);
+    }
 
-        let whereClause = "WHERE s.merchant_id = $1";
-        const params:(string |number)[] =[merchantId];
-        let paramCount =1;
+    const totalResult = await pool.query(
+      `SELECT COUNT(*) FROM settlements s ${whereClause}`,
+      params
+    );
+    const total = parseInt(totalResult.rows[0].count);
 
-        if(status){
-            paramCount++;
-            whereClause +=`AND s.status = $${paramCount}`;
-            params.push(status);
-        }
-
-        const totalResult = await pool.query(
-            `SELECT COUNT(*) FROM settlements s ${whereClause}`,params
-        );
-        const total= parseInt(totalResult.rows[0].count);
-
-        const result = await pool.query(
-             `SELECT s.*, p.payment_method, p.currency
+    const result = await pool.query(
+      `SELECT s.*, p.payment_method, p.currency
        FROM settlements s
        JOIN payments p ON p.id = s.payment_id
        ${whereClause}
        ORDER BY s.created_at DESC
        LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`,
       [...params, limit, offset]
-        );
-        res.json({
-            success:true,
-            data:result.rows,
-            pagination:{currentPage:page,totalSettlements: total}
-        });
-    }catch(err){
-           if (err instanceof Error) res.status(500).json({ success: false, message: err.message });
+    );
+    res.json({
+      success: true,
+      data: result.rows,
+      pagination: { currentPage: page, totalSettlements: total },
+    });
+  })
+);
 
-    }
-})
+// GET /api/settlements/summary
+// Aggregated settlement overview for a merchant
+router.get(
+  "/summary",
+  protect,
+  asyncHandler(async (req: MerchantRequest, res: Response) => {
+    const merchantId = req.merchant!.id;
 
- router.get("/summary",protect,async(req:MerchantRequest,res:Response):Promise<void>=>{
-    try{
-        const merchantId = req.merchant!.id;
-
-        // daily breakdown - window function+aggregations
-        const dailyResult = await pool.query(
-           `SELECT
+    // daily breakdown - window function + aggregations
+    const dailyResult = await pool.query(
+      `SELECT
          DATE(s.created_at) as date,
          COUNT(s.id) as total_settlements,
          SUM(s.gross_amount) as total_gross,
@@ -71,9 +74,9 @@ router.get("/",protect,async(req:MerchantRequest,res:Response):Promise<void>=>{
        WHERE s.merchant_id = $1
        GROUP BY DATE(s.created_at)
        ORDER BY date DESC`,
-      [merchantId]  
-        )
-         // overall summary
+      [merchantId]
+    );
+    // overall summary
     const summaryResult = await pool.query(
       `SELECT
          COUNT(s.id) as total_settlements,
@@ -101,70 +104,65 @@ router.get("/",protect,async(req:MerchantRequest,res:Response):Promise<void>=>{
        ORDER BY total_amount DESC`,
       [merchantId]
     );
-   res.json({
+    res.json({
       success: true,
       data: {
         overall: summaryResult.rows[0],
         daily_breakdown: dailyResult.rows,
-        by_payment_method: methodResult.rows
-      }
+        by_payment_method: methodResult.rows,
+      },
     });
-
-  } catch (err) {
-    if (err instanceof Error) res.status(500).json({ success: false, message: err.message });
-  }
-});
+  })
+);
 
 // POST /api/settlements/:id/settle
 // Mark a pending settlement as settled
-router.post("/:id/settle", protect, async (req: MerchantRequest, res: Response): Promise<void> => {
-  const client = await pool.connect();
-
-  try {
+router.post(
+  "/:id/settle",
+  protect,
+  asyncHandler(async (req: MerchantRequest, res: Response, next: NextFunction) => {
     const { id } = req.params;
     const merchantId = req.merchant!.id;
+    const client = await pool.connect();
 
-    await client.query("BEGIN");
+    try {
+      await client.query("BEGIN");
 
-    const result = await client.query(
-      `UPDATE settlements
-       SET status = 'settled',
-           settled_at = NOW()
-       WHERE id = $1
-         AND merchant_id = $2
-         AND status = 'pending'
-       RETURNING *`,
-      [id, merchantId]
-    );
+      const result = await client.query(
+        `UPDATE settlements
+         SET status = 'settled',
+             settled_at = NOW()
+         WHERE id = $1
+           AND merchant_id = $2
+           AND status = 'pending'
+         RETURNING *`,
+        [id, merchantId]
+      );
 
-    if (result.rows.length === 0) {
-      await client.query("ROLLBACK");
-      res.status(404).json({
-        success: false,
-        message: "Settlement not found or already settled",
+      if (result.rows.length === 0) {
+        throw new ApiError("Settlement not found or already settled", 404);
+      }
+
+      await client.query(
+        `INSERT INTO audit_logs (entity_type, entity_id, action, new_value, performed_by)
+         VALUES ('settlement', $1, 'settled', $2, $3)`,
+        [id, JSON.stringify(result.rows[0]), merchantId]
+      );
+
+      await client.query("COMMIT");
+
+      res.json({
+        success: true,
+        message: "Settlement marked as settled",
+        data: result.rows[0],
       });
-      return;
+    } catch (err) {
+      await client.query("ROLLBACK");
+      next(err);
+    } finally {
+      client.release();
     }
-
-    await client.query(
-      `INSERT INTO audit_logs (entity_type, entity_id, action, new_value, performed_by)
-       VALUES ('settlement', $1, 'settled', $2, $3)`,
-      [id, JSON.stringify(result.rows[0]), merchantId]
-    );
-
-    await client.query("COMMIT");
-
-    res.json({
-      success: true,
-      message: "Settlement marked as settled",
-      data: result.rows[0],
-    });
-  } catch (err) {
-    await client.query("ROLLBACK");
-    if (err instanceof Error) res.status(500).json({ success: false, message: err.message });
-  } finally {
-    client.release();
-  }
-});
+  })
+);
 
 export default router;

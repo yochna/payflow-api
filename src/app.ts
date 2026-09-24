@@ -1,7 +1,7 @@
 import dotenv from "dotenv";
 dotenv.config();
 
-import express, { Application, Request, Response, NextFunction } from "express";
+import express, { Application, Request, Response } from "express";
 import cors from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
@@ -14,19 +14,18 @@ import settlementRoutes from "./routes/settlements";
 import analyticsRoutes from "./routes/analytics";
 import webhookRoutes from "./routes/webhooks";
 import pool from "./config/db";
+import { globalErrorHandler } from "./middleware/error";
 import { swaggerSpec } from "./config/swagger";
 
 const app: Application = express();
 
-interface AppError extends Error {
-  statusCode?: number;
-}
-
 app.use(helmet({ crossOriginResourcePolicy: false }));
-app.use(cors({
-  origin: process.env.CLIENT_URL || "http://localhost:3000",
-  allowedHeaders: ["Content-Type", "Authorization", "x-api-key"]
-}));
+app.use(
+  cors({
+    origin: process.env.CLIENT_URL || "http://localhost:3000",
+    allowedHeaders: ["Content-Type", "Authorization", "x-api-key"],
+  })
+);
 app.use(express.json({ limit: "10kb" }));
 
 // rate limiting (disabled in tests so suites can run quickly)
@@ -68,7 +67,7 @@ app.get("/", (req: Request, res: Response) => {
     version: "1.0.0",
     status: "operational",
     documentation: "/api/docs",
-    health: "/api/health"
+    health: "/api/health",
   });
 });
 
@@ -88,11 +87,6 @@ app.use((req: Request, res: Response): void => {
 });
 
 // error handler
-app.use((err: AppError, req: Request, res: Response, next: NextFunction): void => {
-  res.status(err.statusCode || 500).json({
-    success: false,
-    message: err.message || "Server error"
-  });
-});
+app.use(globalErrorHandler);
 
 export default app;

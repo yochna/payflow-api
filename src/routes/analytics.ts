@@ -1,6 +1,7 @@
 import { Router, Response } from "express";
 import pool from "../config/db";
 import { protect } from "../middleware/auth";
+import { asyncHandler } from "../middleware/error";
 import { MerchantRequest } from "../types";
 
 const router = Router();
@@ -9,10 +10,12 @@ const router = Router();
 // GET /api/analytics/success-rate
 // Payment success rate
 // ─────────────────────────────────────────
-router.get("/success-rate", protect, async (req: MerchantRequest, res: Response): Promise<void> => {
-  try {
+router.get(
+  "/success-rate",
+  protect,
+  asyncHandler(async (req: MerchantRequest, res: Response) => {
     const merchantId = req.merchant!.id;
-    const days = parseInt(req.query.days as string || "30");
+    const days = parseInt((req.query.days as string) || "30");
 
     const result = await pool.query(
       `SELECT
@@ -32,18 +35,17 @@ router.get("/success-rate", protect, async (req: MerchantRequest, res: Response)
     );
 
     res.json({ success: true, data: result.rows[0] });
-
-  } catch (err) {
-    if (err instanceof Error) res.status(500).json({ success: false, message: err.message });
-  }
-});
+  })
+);
 
 // ─────────────────────────────────────────
 // GET /api/analytics/failure-reasons
 // Why payments fail
 // ─────────────────────────────────────────
-router.get("/failure-reasons", protect, async (req: MerchantRequest, res: Response): Promise<void> => {
-  try {
+router.get(
+  "/failure-reasons",
+  protect,
+  asyncHandler(async (req: MerchantRequest, res: Response) => {
     const merchantId = req.merchant!.id;
 
     const result = await pool.query(
@@ -59,20 +61,19 @@ router.get("/failure-reasons", protect, async (req: MerchantRequest, res: Respon
     );
 
     res.json({ success: true, data: result.rows });
-
-  } catch (err) {
-    if (err instanceof Error) res.status(500).json({ success: false, message: err.message });
-  }
-});
+  })
+);
 
 // ─────────────────────────────────────────
 // GET /api/analytics/volume
 // Daily/weekly payment volume
 // ─────────────────────────────────────────
-router.get("/volume", protect, async (req: MerchantRequest, res: Response): Promise<void> => {
-  try {
+router.get(
+  "/volume",
+  protect,
+  asyncHandler(async (req: MerchantRequest, res: Response) => {
     const merchantId = req.merchant!.id;
-    const groupBy = req.query.group_by as string || "day";
+    const groupBy = (req.query.group_by as string) || "day";
 
     const dateTrunc = groupBy === "week" ? "week" : groupBy === "month" ? "month" : "day";
 
@@ -92,18 +93,17 @@ router.get("/volume", protect, async (req: MerchantRequest, res: Response): Prom
     );
 
     res.json({ success: true, data: result.rows });
-
-  } catch (err) {
-    if (err instanceof Error) res.status(500).json({ success: false, message: err.message });
-  }
-});
+  })
+);
 
 // ─────────────────────────────────────────
 // GET /api/analytics/payment-methods
 // Breakdown by payment method
 // ─────────────────────────────────────────
-router.get("/payment-methods", protect, async (req: MerchantRequest, res: Response): Promise<void> => {
-  try {
+router.get(
+  "/payment-methods",
+  protect,
+  asyncHandler(async (req: MerchantRequest, res: Response) => {
     const merchantId = req.merchant!.id;
 
     const result = await pool.query(
@@ -125,18 +125,17 @@ router.get("/payment-methods", protect, async (req: MerchantRequest, res: Respon
     );
 
     res.json({ success: true, data: result.rows });
-
-  } catch (err) {
-    if (err instanceof Error) res.status(500).json({ success: false, message: err.message });
-  }
-});
+  })
+);
 
 // ─────────────────────────────────────────
 // GET /api/analytics/summary
 // Complete dashboard summary
 // ─────────────────────────────────────────
-router.get("/summary", protect, async (req: MerchantRequest, res: Response): Promise<void> => {
-  try {
+router.get(
+  "/summary",
+  protect,
+  asyncHandler(async (req: MerchantRequest, res: Response) => {
     const merchantId = req.merchant!.id;
 
     // today's stats
@@ -190,13 +189,10 @@ router.get("/summary", protect, async (req: MerchantRequest, res: Response): Pro
         today: todayResult.rows[0],
         this_month: monthResult.rows[0],
         pending_settlements: pendingResult.rows[0],
-        top_payment_method: topMethodResult.rows[0] || null
-      }
+        top_payment_method: topMethodResult.rows[0] || null,
+      },
     });
-
-  } catch (err) {
-    if (err instanceof Error) res.status(500).json({ success: false, message: err.message });
-  }
-});
+  })
+);
 
 export default router;

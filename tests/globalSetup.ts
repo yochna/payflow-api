@@ -14,9 +14,7 @@ export default async function globalSetup(): Promise<void> {
   // Connect to the maintenance database to create the target DB if needed.
   const adminUrl = new URL(targetUrl);
   adminUrl.pathname = "/postgres";
-  const dbName = targetUrl.startsWith("postgres")
-    ? new URL(targetUrl).pathname.slice(1)
-    : "";
+  const dbName = targetUrl.startsWith("postgres") ? new URL(targetUrl).pathname.slice(1) : "";
 
   if (!/^[a-zA-Z0-9_]+$/.test(dbName)) {
     throw new Error(`Invalid test database name derived from ${targetUrl}`);
@@ -35,9 +33,9 @@ export default async function globalSetup(): Promise<void> {
 
   try {
     await admin.query(`CREATE DATABASE ${dbName}`);
-  } catch (err: any) {
+  } catch (err) {
     // 42P04 = duplicate_database — fine, it already exists.
-    if (err?.code !== "42P04") throw err;
+    if ((err as { code?: string } | null)?.code !== "42P04") throw err;
   } finally {
     await admin.end();
   }

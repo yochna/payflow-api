@@ -1,17 +1,31 @@
 {
   "name": "payflow-api",
   "version": "1.0.0",
-  "description": "",
+  "description": "Payment processing and settlement engine REST API — TypeScript, Express, PostgreSQL",
   "main": "index.js",
   "scripts": {
     "dev": "ts-node src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
+    "lint": "eslint . --max-warnings 0",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "payments",
+    "payment-gateway",
+    "settlements",
+    "refunds",
+    "webhooks",
+    "typescript",
+    "express",
+    "postgresql",
+    "rest-api"
+  ],
+  "author": "B. Yochna Rao",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
@@ -28,6 +42,7 @@
     "uuid": "^9.0.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/bcryptjs": "^2.4.6",
     "@types/cors": "^2.8.19",
     "@types/express": "^4.17.21",
@@ -38,10 +53,14 @@
     "@types/swagger-jsdoc": "^6.0.4",
     "@types/swagger-ui-express": "^4.1.8",
     "@types/uuid": "^9.0.0",
+    "eslint": "^10.11.0",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.9.9",
     "supertest": "^7.3.0",
     "ts-node": "^10.9.2",
     "tsx": "^4.23.8",
     "typescript": "^5.3.3",
+    "typescript-eslint": "^8.70.1",
     "vitest": "^5.0.1"
   }
 }

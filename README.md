@@ -1,5 +1,11 @@
 # ⚡ PayFlow — Payment Processing & Settlement Engine
 
+[![CI](https://github.com/yochna/payflow-api/actions/workflows/ci.yml/badge.svg)](https://github.com/yochna/payflow-api/actions/workflows/ci.yml)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6.svg?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-20-339933.svg?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1.svg?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![Docker](https://img.shields.io/badge/Docker-ready-2496ED.svg?logo=docker&logoColor=white)](https://www.docker.com/)
+
 > A production-inspired payment processing REST API built with **TypeScript, Node.js, Express, and PostgreSQL**.
 
 PayFlow is a backend payment-processing system designed to model a merchant payment lifecycle from **payment creation and capture to settlement and refunds**.
@@ -27,6 +33,45 @@ The deployed API is live and connected to PostgreSQL.
   "message": "PayFlow API running",
   "db": "connected"
 }
+```
+
+---
+
+### 🔍 Try It Now — 30-second walkthrough
+
+Run the full payment lifecycle against the **live API** with curl:
+
+```bash
+# 1. Register a merchant (returns api_key, api_secret + JWT tokens)
+curl -X POST https://payflow-api-n3o5.onrender.com/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Demo Shop","email":"demo@example.com","password":"secret123","webhook_url":"https://your-app.com/webhook"}'
+
+# 2. Create a payment (idempotent — safe to retry with the same key)
+curl -X POST https://payflow-api-n3o5.onrender.com/api/payments/create \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: pk_xxxxxxxx" \
+  -d '{"amount":1000,"payment_method":"upi","idempotency_key":"order-001"}'
+
+# 3. Capture it — fee, GST and the merchant settlement are computed in one transaction
+curl -X POST https://payflow-api-n3o5.onrender.com/api/payments/capture/<payment_id> \
+  -H "x-api-key: pk_xxxxxxxx"
+
+# 4. Inspect delivery of the signed webhook event
+curl https://payflow-api-n3o5.onrender.com/api/webhooks \
+  -H "Authorization: Bearer <access_token>"
+
+# 5. Settle the pending settlement, refund part of it, and chart the analytics
+```
+
+For a ₹1000 capture the settlement math is:
+
+```text
+₹1000.00
+- 2% platform fee   (₹20.00)
+- 18% GST on fee    (₹3.60)
+--------------------
+₹976.40  → merchant net settlement
 ```
 
 ---
@@ -78,11 +123,11 @@ The system also handles failure scenarios, duplicate requests, webhook events, a
 
 ### 💳 Payment Processing
 
-* Create payments
-* Capture payments
-* Mark payments as failed
-* Retrieve payment details
-* Paginated payment listing
+- Create payments
+- Capture payments
+- Mark payments as failed
+- Retrieve payment details
+- Paginated payment listing
 
 ### 🔁 Idempotency
 
@@ -105,9 +150,9 @@ Captured payments automatically generate a settlement with a `pending` status.
 
 The model uses:
 
-* **2% platform fee**
-* **18% GST on the platform fee**
-* Remaining amount goes to the merchant
+- **2% platform fee**
+- **18% GST on the platform fee**
+- Remaining amount goes to the merchant
 
 Pending settlements are then marked `settled` via `POST /api/settlements/:id/settle`.
 
@@ -115,17 +160,17 @@ Pending settlements are then marked `settled` via `POST /api/settlements/:id/set
 
 Supports:
 
-* Full refunds
-* Partial refunds
-* Remaining refundable amount tracking
+- Full refunds
+- Partial refunds
+- Remaining refundable amount tracking
 
 ### 🔔 Webhook Events
 
 Payment state changes generate webhook events that are delivered via **real HTTP POSTs** to the merchant's `webhook_url`.
 
-* Each delivery is signed with an HMAC-SHA256 signature (`x-payflow-signature` header) using the merchant's API secret, so the receiver can verify authenticity.
-* Delivery results are recorded as `pending` / `delivered` / `failed` and failed deliveries can be manually retried with `POST /api/webhooks/retry/:id`.
-* A merchant endpoint is configured at registration via the `webhook_url` field.
+- Each delivery is signed with an HMAC-SHA256 signature (`x-payflow-signature` header) using the merchant's API secret, so the receiver can verify authenticity.
+- Delivery results are recorded as `pending` / `delivered` / `failed` and failed deliveries can be manually retried with `POST /api/webhooks/retry/:id`.
+- A merchant endpoint is configured at registration via the `webhook_url` field.
 
 ### 📝 Audit Logging
 
@@ -135,11 +180,11 @@ Important payment state changes are recorded with previous and updated values, p
 
 Provides APIs for:
 
-* Payment summary
-* Success rate
-* Payment volume
-* Daily/weekly/monthly volume
-* Payment method breakdown
+- Payment summary
+- Success rate
+- Payment volume
+- Daily/weekly/monthly volume
+- Payment method breakdown
 
 ### 🔐 Dual Authentication
 
@@ -154,11 +199,11 @@ PayFlow uses two authentication approaches:
 
 The backend includes:
 
-* Helmet.js
-* bcrypt password hashing
-* Express rate limiting
-* JWT authentication
-* API-key authentication
+- Helmet.js
+- bcrypt password hashing
+- Express rate limiting
+- JWT authentication
+- API-key authentication
 
 ### 🗄️ Transactional Database Operations
 
@@ -320,11 +365,11 @@ Merchant settlement:
 
 ## Settlements
 
-| Method | Endpoint                   | Auth | Description                       |
-| ------ | -------------------------- | ---- | --------------------------------- |
-| `GET`  | `/api/settlements`         | JWT  | Get settlements                   |
-| `GET`  | `/api/settlements/summary` | JWT  | Get settlement summary            |
-| `POST` | `/api/settlements/:id/settle` | JWT | Mark a pending settlement as settled |
+| Method | Endpoint                      | Auth | Description                          |
+| ------ | ----------------------------- | ---- | ------------------------------------ |
+| `GET`  | `/api/settlements`            | JWT  | Get settlements                      |
+| `GET`  | `/api/settlements/summary`    | JWT  | Get settlement summary               |
+| `POST` | `/api/settlements/:id/settle` | JWT  | Mark a pending settlement as settled |
 
 ---
 
@@ -361,11 +406,12 @@ Merchant settlement:
 | Password Security | bcrypt             |
 | HTTP Security     | Helmet.js          |
 | Rate Limiting     | express-rate-limit |
+| Code Quality      | ESLint + Prettier  |
 | Testing           | Vitest + Supertest |
 | Containerization  | Docker             |
 | CI/CD             | GitHub Actions     |
 | Deployment        | Render             |
-| Database Hosting  | PostgreSQL         |
+| Database Hosting  | PostgreSQL (Neon)  |
 
 ---
 
@@ -522,13 +568,13 @@ PayFlow provides analytics APIs for monitoring payment activity.
 
 Available analytics include:
 
-* Overall payment summary
-* Payment success rate
-* Transaction volume
-* Daily volume
-* Weekly volume
-* Monthly volume
-* Payment-method breakdown
+- Overall payment summary
+- Payment success rate
+- Transaction volume
+- Daily volume
+- Weekly volume
+- Monthly volume
+- Payment-method breakdown
 
 Example:
 
@@ -575,7 +621,10 @@ payflow-api/
 │   │   ├── db.ts          ── PostgreSQL connection pool
 │   │   └── swagger.ts     ── OpenAPI specification
 │   ├── middleware/
-│   │   └── auth.ts        ── JWT + API-key authentication
+│   │   ├── auth.ts        ── JWT + API-key authentication
+│   │   └── error.ts       ── ApiError, asyncHandler, global error handler
+│   ├── services/
+│   │   └── settlement.ts  ── pure fee/GST/refund math (unit-tested)
 │   ├── routes/
 │   │   ├── auth.ts        ── register / login / refresh / me
 │   │   ├── payments.ts    ── create / capture / list / fail
@@ -587,7 +636,8 @@ payflow-api/
 │       └── index.ts       ── shared TypeScript types
 │
 ├── tests/
-│   ├── api.integration.test.ts ── end-to-end API tests
+│   ├── api.integration.test.ts ── end-to-end API tests (real DB + HTTP)
+│   ├── settlement.unit.test.ts ── pure business-logic unit tests
 │   ├── globalSetup.ts          ── creates + resets the test DB
 │   ├── setup.ts                ── test environment variables
 │   └── helpers/
@@ -598,9 +648,11 @@ payflow-api/
 ├── package-lock.json
 ├── tsconfig.json       ── TypeScript configuration
 ├── vitest.config.mts   ── test configuration
+├── eslint.config.mjs   ── ESLint (flat config)
+├── .prettierrc.json    ── Prettier formatting rules
 ├── Dockerfile          ── container image
 ├── docker-compose.yml  ── local API + PostgreSQL
-├── .github/workflows/ci.yml ── CI pipeline
+├── .github/workflows/ci.yml ── CI pipeline (lint, format, build, test)
 ├── .gitignore
 └── README.md
 ```
@@ -693,9 +745,12 @@ http://localhost:5001/api/docs
 
 # ✅ Automated Tests
 
-Integration tests run the real Express app against PostgreSQL (Vitest + Supertest).
+The project ships **unit tests** and **integration tests** (Vitest + Supertest).
 
-Requires a running PostgreSQL instance. The tests default to
+- **Unit tests** (`tests/settlement.unit.test.ts`) cover the pure business math — platform fee, GST, rounding, refund balance.
+- **Integration tests** (`tests/api.integration.test.ts`) run the real Express app against PostgreSQL and cover the full lifecycle: register → login → create → capture → webhook delivery (HMAC verified) → settle → refund → analytics, including retries and error cases.
+
+Integration tests require a running PostgreSQL instance. The tests default to
 `postgres://postgres:postgres@127.0.0.1:5433/payflow_test` (the host port
 published by `docker compose`) and will create the test database automatically
 when it does not exist.
@@ -715,7 +770,14 @@ Run a single test repeatedly while developing:
 npm run test:watch
 ```
 
-CI (GitHub Actions) runs `npm run build` and `npm test` against a fresh
+Code quality is enforced locally and in CI:
+
+```bash
+npm run lint     # ESLint (zero warnings allowed)
+npm run format   # auto-format with Prettier
+```
+
+CI (GitHub Actions) runs **lint → format check → build → tests** against a fresh
 PostgreSQL service on every push and pull request.
 
 ---
@@ -793,14 +855,14 @@ Current health response:
 
 The project includes several backend security mechanisms:
 
-* JWT-based authentication
-* API-key authentication
-* bcrypt password hashing
-* Helmet security middleware
-* Express rate limiting
-* Environment-based secrets
-* Database transactions
-* Input validation at API boundaries
+- JWT-based authentication
+- API-key authentication
+- bcrypt password hashing
+- Helmet security middleware
+- Express rate limiting
+- Environment-based secrets
+- Database transactions
+- Input validation at API boundaries
 
 > **Important:** PayFlow is an educational/portfolio implementation and is not intended to process real financial transactions or replace a regulated payment processor.
 
@@ -810,24 +872,27 @@ The project includes several backend security mechanisms:
 
 PayFlow was designed to demonstrate practical backend engineering concepts including:
 
-* REST API development
-* TypeScript backend development
-* PostgreSQL database design
-* Authentication and authorization
-* API-key based integrations
-* Idempotent API design
-* Payment state management
-* Transactional database operations
-* Refund processing
-* Settlement calculations
-* Signed webhook delivery (HMAC)
-* Audit logging
-* Analytics APIs
-* API documentation with OpenAPI
-* Integration testing with a real database
-* Dockerization
-* Continuous integration
-* Cloud deployment
+- REST API development
+- TypeScript backend development
+- PostgreSQL database design
+- Authentication and authorization
+- API-key based integrations
+- Idempotent API design
+- Payment state management
+- Transactional database operations
+- Refund processing
+- Settlement calculations
+- Signed webhook delivery (HMAC)
+- Audit logging
+- Analytics APIs
+- API documentation with OpenAPI
+- Integration testing with a real database
+- Unit testing of pure business logic
+- Centralized error handling
+- ESLint + Prettier code quality enforcement
+- Dockerization
+- Continuous integration
+- Cloud deployment
 
 ---
 
@@ -835,14 +900,14 @@ PayFlow was designed to demonstrate practical backend engineering concepts inclu
 
 Potential future improvements include:
 
-* Webhook signature verification helper for merchants
-* Automatic webhook retry scheduling (background jobs)
-* Improved observability and structured logging
-* Redis-based caching
-* Message queue integration
-* Integration with a sandbox payment provider
-* More advanced monitoring and alerting
-* Frontend dashboard for merchants
+- Webhook signature verification helper for merchants
+- Automatic webhook retry scheduling (background jobs)
+- Improved observability and structured logging
+- Redis-based caching
+- Message queue integration
+- Integration with a sandbox payment provider
+- More advanced monitoring and alerting
+- Frontend dashboard for merchants
 
 ---
 
