@@ -322,6 +322,119 @@ describe("refunds", () => {
   });
 });
 
+describe("input hardening", () => {
+  it("rejects non-numeric and over-precise amounts", async () => {
+    const asString = await api
+      .post("/api/payments/create")
+      .set("x-api-key", apiKey)
+      .send({ amount: "100", payment_method: "upi" });
+    expect(asString.status).toBe(400);
+
+    const tooPrecise = await api
+      .post("/api/payments/create")
+      .set("x-api-key", apiKey)
+      .send({ amount: 10.999, payment_method: "upi" });
+    expect(tooPrecise.status).toBe(400);
+    expect(tooPrecise.body.message).toMatch(/decimal places/i);
+  });
+
+  it("accepts the standard Idempotency-Key header", async () => {
+    const key = `header_${Date.now()}`;
+    const first = await api
+      .post("/api/payments/create")
+      .set("x-api-key", apiKey)
+      .set("Idempotency-Key", key)
+      .send({ amount: 250, payment_method: "upi" });
+    expect(first.status).toBe(201);
+
+    const replay = await api
+      .post("/api/payments/create")
+      .set("x-api-key", apiKey)
+      .set("Idempotency-Key", key)
+      .send({ amount: 250, payment_method: "upi" });
+    expect(replay.status).toBe(200);
+    expect(replay.headers["idempotent-replayed"]).toBe("true");
+    expect(replay.body.data.id).toBe(first.body.data.id);
+  });
+});
+
+describe("concurrency safety", () => {
+  it("captures a payment exactly once under two concurrent requests", async () => {
+    const created = await api
+      .post("/api/payments/create")
+      .set("x-api-key", apiKey)
+      .send({ amount: 700, payment_method: "card" });
+    const paymentId = created.body.data.id;
+
+    const results = await Promise.all([
+      api.post(`/api/payments/capture/${paymentId}`).set("x-api-key", apiKey),
+      api.post(`/api/payments/capture/${paymentId}`).set("x-api-key", apiKey),
+    ]);
+    expect(results.map((r) => r.status).sort()).toEqual([200, 400]);
+
+    const settlements = await api
+      .get("/api/settlements?limit=100")
+      .set("Authorization", `Bearer ${accessToken}`);
+    const rows = settlements.body.data.filter(
+      (s: SettlementRow) => Number(s.payment_id) === Number(paymentId)
+    );
+    expect(rows).toHaveLength(1);
+  });
+
+  it("does not let two concurrent refunds exceed the captured amount", async () => {
+    const created = await api
+      .post("/api/payments/create")
+      .set("x-api-key", apiKey)
+      .send({ amount: 1000, payment_method: "upi" });
+    const paymentId = created.body.data.id;
+    await api.post(`/api/payments/capture/${paymentId}`).set("x-api-key", apiKey);
+
+    const results = await Promise.all([
+      api
+        .post("/api/refunds")
+        .set("x-api-key", apiKey)
+        .send({ payment_id: paymentId, amount: 600 }),
+      api
+        .post("/api/refunds")
+        .set("x-api-key", apiKey)
+        .send({ payment_id: paymentId, amount: 600 }),
+    ]);
+    expect(results.map((r) => r.status).sort()).toEqual([201, 400]);
+
+    const refunds = await api
+      .get("/api/refunds?limit=100")
+      .set("Authorization", `Bearer ${accessToken}`);
+    const total = refunds.body.data
+      .filter((r: { payment_id: number }) => Number(r.payment_id) === Number(paymentId))
+      .reduce((sum: number, r: { amount: string | number }) => sum + Number(r.amount), 0);
+    expect(total).toBe(600);
+  });
+});
+
+describe("audit trail", () => {
+  it("returns every payment state change in order", async () => {
+    const created = await api
+      .post("/api/payments/create")
+      .set("x-api-key", apiKey)
+      .send({ amount: 300, payment_method: "wallet" });
+    const paymentId = created.body.data.id;
+
+    await api.post(`/api/payments/capture/${paymentId}`).set("x-api-key", apiKey);
+    await api
+      .post("/api/refunds")
+      .set("x-api-key", apiKey)
+      .send({ payment_id: paymentId, amount: 100, reason: "Audit check" });
+
+    const res = await api.get(`/api/payments/${paymentId}/audit`).set("x-api-key", apiKey);
+    expect(res.status).toBe(200);
+    expect(res.body.data.map((row: { action: string }) => row.action)).toEqual([
+      "created",
+      "captured",
+      "refunded",
+    ]);
+  });
+});
+
 describe("analytics", () => {
   it("returns a summary for today", async () => {
     const res = await api

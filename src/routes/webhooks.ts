@@ -4,6 +4,7 @@ import pool from "../config/db";
 import { protect } from "../middleware/auth";
 import { ApiError, asyncHandler } from "../middleware/error";
 import { MerchantRequest } from "../types";
+import { parsePagination, parsePositiveInt } from "../utils/validation";
 
 const router = Router();
 
@@ -116,9 +117,7 @@ router.get(
   protect,
   asyncHandler(async (req: MerchantRequest, res: Response) => {
     const merchantId = req.merchant!.id;
-    const page = parseInt((req.query.page as string) || "1");
-    const limit = parseInt((req.query.limit as string) || "10");
-    const offset = (page - 1) * limit;
+    const { page, limit, offset } = parsePagination(req.query.page, req.query.limit);
     const status = req.query.status as string;
 
     let whereClause = "WHERE merchant_id = $1";
@@ -161,7 +160,7 @@ router.post(
   "/retry/:id",
   protect,
   asyncHandler(async (req: MerchantRequest, res: Response) => {
-    const { id } = req.params;
+    const id = parsePositiveInt(req.params.id, "webhook id");
     const merchantId = req.merchant!.id;
 
     const webhookResult = await pool.query(

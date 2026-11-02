@@ -355,6 +355,7 @@ Merchant settlement:
 | `POST` | `/api/payments/capture/:id` | API Key | Capture payment and auto-settle   |
 | `GET`  | `/api/payments`             | JWT     | Get paginated payments            |
 | `GET`  | `/api/payments/:id`         | API Key | Get payment status                |
+| `GET`  | `/api/payments/:id/audit`   | API Key | Read the payment audit trail      |
 | `POST` | `/api/payments/:id/fail`    | API Key | Mark payment as failed            |
 
 ---
@@ -755,10 +756,10 @@ http://localhost:5001/api/docs
 
 # ✅ Automated Tests
 
-The project ships **unit tests** and **integration tests** (Vitest + Supertest).
+The project ships **46 tests** across unit and integration suites (Vitest + Supertest).
 
 - **Unit tests** (`tests/settlement.unit.test.ts`) cover the pure business math — platform fee, GST, rounding, refund balance.
-- **Integration tests** (`tests/api.integration.test.ts`) run the real Express app against PostgreSQL and cover the full lifecycle: register → login → create → capture → webhook delivery (HMAC verified) → settle → refund → analytics, including retries and error cases.
+- **Integration tests** (`tests/api.integration.test.ts`) run the real Express app against PostgreSQL and cover the full lifecycle: register → login → create → capture → webhook delivery (HMAC verified) → settle → refund → analytics, plus input hardening, idempotency replay, concurrent capture/refund races, the audit trail, retries and error cases.
 
 Integration tests require a running PostgreSQL instance. The tests default to
 `postgres://postgres:postgres@127.0.0.1:5433/payflow_test` (the host port

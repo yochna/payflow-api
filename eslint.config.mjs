@@ -9,6 +9,26 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
+    files: ["public/**/*.js"],
+    languageOptions: {
+      globals: {
+        window: "readonly",
+        document: "readonly",
+        navigator: "readonly",
+        sessionStorage: "readonly",
+        fetch: "readonly",
+        AbortController: "readonly",
+        crypto: "readonly",
+        setTimeout: "readonly",
+        clearTimeout: "readonly",
+        HTMLElement: "readonly",
+        HTMLAnchorElement: "readonly",
+        HTMLButtonElement: "readonly",
+        HTMLFormElement: "readonly",
+      },
+    },
+  },
+  {
     rules: {
       "@typescript-eslint/no-explicit-any": "warn",
       // Express handlers that pass errors via next() can return void while

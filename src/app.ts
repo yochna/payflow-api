@@ -2,6 +2,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 import path from "path";
+import crypto from "crypto";
 import express, { Application, Request, Response } from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -19,6 +20,17 @@ import { globalErrorHandler } from "./middleware/error";
 import { swaggerSpec } from "./config/swagger";
 
 const app: Application = express();
+
+// Render terminates TLS in front of the app; trust its proxy headers so rate
+// limiting sees real client IPs instead of the proxy's.
+app.set("trust proxy", 1);
+
+// Correlate logs and client-side errors with a single request id.
+app.use((req: Request, res: Response, next) => {
+  const requestId = req.header("x-request-id") || crypto.randomUUID();
+  res.setHeader("x-request-id", requestId);
+  next();
+});
 
 app.use(helmet({ crossOriginResourcePolicy: false }));
 app.use(
@@ -67,9 +79,17 @@ app.use("/api/webhooks", webhookRoutes);
 
 // health check
 app.get("/api/health", async (req: Request, res: Response): Promise<void> => {
+  const startedAt = Date.now();
   try {
     await pool.query("SELECT 1");
-    res.json({ success: true, message: "PayFlow API running", db: "connected" });
+    res.json({
+      success: true,
+      message: "PayFlow API running",
+      db: "connected",
+      dbLatencyMs: Date.now() - startedAt,
+      uptimeSeconds: Math.round(process.uptime()),
+      version: process.env.npm_package_version || "1.0.0",
+    });
   } catch {
     res.status(500).json({ success: false, message: "DB connection failed" });
   }

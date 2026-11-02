@@ -15,7 +15,7 @@ const options = {
     },
     servers: [
       { url: "http://localhost:5001", description: "Development" },
-      { url: "https://your-render-url.onrender.com", description: "Production" },
+      { url: "https://payflow-api-n3o5.onrender.com", description: "Production" },
     ],
     components: {
       securitySchemes: {
@@ -166,6 +166,16 @@ const options = {
           tags: ["Payments"],
           summary: "Create a new payment",
           security: [{ ApiKeyAuth: [] }],
+          parameters: [
+            {
+              name: "Idempotency-Key",
+              in: "header",
+              required: false,
+              schema: { type: "string", maxLength: 100 },
+              description:
+                "Header alternative to the idempotency_key body field. Replays return the original payment with idempotent-replayed: true.",
+            },
+          ],
           requestBody: {
             required: true,
             content: {
@@ -207,6 +217,20 @@ const options = {
           responses: {
             200: { description: "Payment captured and settlement initiated" },
             404: { description: "Payment not found" },
+          },
+        },
+      },
+      "/api/payments/{id}/audit": {
+        get: {
+          tags: ["Payments"],
+          summary: "Read the audit trail for a payment",
+          description:
+            "Returns every recorded state transition (created, captured, refunded) with old/new values, newest last.",
+          security: [{ ApiKeyAuth: [] }],
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }],
+          responses: {
+            200: { description: "Ordered audit entries for the payment" },
+            404: { description: "Payment not found for this merchant" },
           },
         },
       },

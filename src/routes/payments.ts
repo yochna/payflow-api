@@ -7,6 +7,12 @@ import { ApiError, asyncHandler } from "../middleware/error";
 import { MerchantRequest } from "../types";
 import { triggerWebhook } from "./webhooks";
 import { calculateSettlement } from "../services/settlement";
+import {
+  parseAmount,
+  parseIdempotencyKey,
+  parsePagination,
+  parsePositiveInt,
+} from "../utils/validation";
 
 const router = Router();
 
@@ -39,7 +45,7 @@ router.post(
   apiKeyAuth,
   asyncHandler(async (req: MerchantRequest, res: Response, next: NextFunction) => {
     const {
-      amount,
+      amount: rawAmount,
       payment_method,
       customer_name,
       customer_email,
@@ -48,49 +54,38 @@ router.post(
     } = req.body as CreatePaymentBody;
 
     const merchantId = req.merchant!.id;
+    const amount = parseAmount(rawAmount);
+
+    if (!VALID_PAYMENT_METHODS.includes(payment_method)) {
+      throw new ApiError("Invalid payment method", 400);
+    }
+
+    const idempotencyKey = parseIdempotencyKey(idempotency_key, req.header("idempotency-key"));
+
+    // Fast path: the same request has already completed.
+    if (idempotencyKey) {
+      const existing = await pool.query(
+        `SELECT *
+         FROM payments
+         WHERE idempotency_key = $1
+         AND merchant_id = $2`,
+        [idempotencyKey, merchantId]
+      );
+
+      if (existing.rows.length > 0) {
+        res.setHeader("idempotent-replayed", "true");
+        res.status(200).json({
+          success: true,
+          message: "Payment already exists (idempotent response)",
+          data: existing.rows[0],
+        });
+        return;
+      }
+    }
+
     const client = await pool.connect();
 
     try {
-      // Validate required fields
-      if (!amount || !payment_method) {
-        throw new ApiError("Amount and payment_method required", 400);
-      }
-
-      // Validate amount
-      if (amount <= 0) {
-        throw new ApiError("Amount must be greater than 0", 400);
-      }
-
-      // Validate payment method
-      if (!VALID_PAYMENT_METHODS.includes(payment_method)) {
-        throw new ApiError("Invalid payment method", 400);
-      }
-
-      /*
-       * Fast idempotency check.
-       *
-       * This handles the normal case where the same request
-       * is sent again after the first request has completed.
-       */
-      if (idempotency_key) {
-        const existing = await client.query(
-          `SELECT *
-           FROM payments
-           WHERE idempotency_key = $1
-           AND merchant_id = $2`,
-          [idempotency_key, merchantId]
-        );
-
-        if (existing.rows.length > 0) {
-          res.status(200).json({
-            success: true,
-            message: "Payment already exists (idempotent response)",
-            data: existing.rows[0],
-          });
-          return;
-        }
-      }
-
       await client.query("BEGIN");
 
       let customerId: number | null = null;
@@ -112,7 +107,7 @@ router.post(
        * If the client doesn't provide an idempotency key,
        * generate an internal unique key.
        */
-      const idemKey = idempotency_key || `idem_${uuidv4().replace(/-/g, "")}`;
+      const idemKey = idempotencyKey || `idem_${uuidv4().replace(/-/g, "")}`;
 
       // Create payment
       const paymentResult = await client.query(
@@ -165,16 +160,17 @@ router.post(
        * This handles a race condition where two requests
        * with the same idempotency key arrive simultaneously.
        */
-      if (isUniqueViolation(err) && idempotency_key) {
+      if (isUniqueViolation(err) && idempotencyKey) {
         const existing = await pool.query(
           `SELECT *
            FROM payments
            WHERE idempotency_key = $1
            AND merchant_id = $2`,
-          [idempotency_key, merchantId]
+          [idempotencyKey, merchantId]
         );
 
         if (existing.rows.length > 0) {
+          res.setHeader("idempotent-replayed", "true");
           res.status(200).json({
             success: true,
             message: "Payment already exists (idempotent response)",
@@ -199,18 +195,24 @@ router.post(
   "/capture/:id",
   apiKeyAuth,
   asyncHandler(async (req: MerchantRequest, res: Response, next: NextFunction) => {
-    const { id } = req.params;
+    const id = parsePositiveInt(req.params.id, "payment id");
     const merchantId = req.merchant!.id;
     const client = await pool.connect();
 
     try {
       await client.query("BEGIN");
 
+      /*
+       * Lock the payment row before checking its state. Without FOR UPDATE
+       * two concurrent captures both read status='created' and each insert a
+       * settlement, paying the merchant twice.
+       */
       const paymentResult = await client.query(
         `SELECT *
          FROM payments
          WHERE id = $1
-         AND merchant_id = $2`,
+         AND merchant_id = $2
+         FOR UPDATE`,
         [id, merchantId]
       );
 
@@ -321,12 +323,7 @@ router.get(
   protect,
   asyncHandler(async (req: MerchantRequest, res: Response) => {
     const merchantId = req.merchant!.id;
-
-    const page = Math.max(parseInt((req.query.page as string) || "1", 10), 1);
-
-    const limit = Math.min(Math.max(parseInt((req.query.limit as string) || "10", 10), 1), 100);
-
-    const offset = (page - 1) * limit;
+    const { page, limit, offset } = parsePagination(req.query.page, req.query.limit);
 
     const status = req.query.status as string;
     const payment_method = req.query.payment_method as string;
@@ -389,6 +386,37 @@ router.get(
 );
 
 /**
+ * GET PAYMENT AUDIT TRAIL
+ * GET /api/payments/:id/audit
+ */
+router.get(
+  "/:id/audit",
+  apiKeyAuth,
+  asyncHandler(async (req: MerchantRequest, res: Response) => {
+    const id = parsePositiveInt(req.params.id, "payment id");
+    const merchantId = req.merchant!.id;
+
+    const payment = await pool.query("SELECT id FROM payments WHERE id = $1 AND merchant_id = $2", [
+      id,
+      merchantId,
+    ]);
+    if (payment.rows.length === 0) {
+      throw new ApiError("Payment not found", 404);
+    }
+
+    const result = await pool.query(
+      `SELECT id, action, old_value, new_value, performed_by, created_at
+       FROM audit_logs
+       WHERE entity_type = 'payment' AND entity_id = $1
+       ORDER BY created_at ASC, id ASC`,
+      [id]
+    );
+
+    res.json({ success: true, data: result.rows });
+  })
+);
+
+/**
  * GET SINGLE PAYMENT
  * GET /api/payments/:id
  */
@@ -396,7 +424,7 @@ router.get(
   "/:id",
   apiKeyAuth,
   asyncHandler(async (req: MerchantRequest, res: Response) => {
-    const { id } = req.params;
+    const id = parsePositiveInt(req.params.id, "payment id");
     const merchantId = req.merchant!.id;
 
     const result = await pool.query(
@@ -431,10 +459,12 @@ router.post(
   "/:id/fail",
   apiKeyAuth,
   asyncHandler(async (req: MerchantRequest, res: Response) => {
-    const { id } = req.params;
-
+    const id = parsePositiveInt(req.params.id, "payment id");
     const { failure_reason } = req.body as UpdatePaymentBody;
 
+    if (failure_reason && String(failure_reason).length > 255) {
+      throw new ApiError("failure_reason must be at most 255 characters", 400);
+    }
     const merchantId = req.merchant!.id;
 
     const result = await pool.query(

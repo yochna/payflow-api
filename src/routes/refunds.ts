@@ -4,6 +4,7 @@ import { apiKeyAuth, protect } from "../middleware/auth";
 import { ApiError, asyncHandler } from "../middleware/error";
 import { MerchantRequest } from "../types";
 import { isFullyRefunded, remainingAfterRefund, round2 } from "../services/settlement";
+import { parseAmount, parsePagination, parsePositiveInt } from "../utils/validation";
 
 const router = Router();
 interface RefundBody {
@@ -19,22 +20,29 @@ router.post(
   "/",
   apiKeyAuth,
   asyncHandler(async (req: MerchantRequest, res: Response, next: NextFunction) => {
-    const { payment_id, amount, reason, initiated_by = "merchant" } = req.body as RefundBody;
+    const body = req.body as RefundBody;
+    const paymentId = parsePositiveInt(body.payment_id, "payment_id");
+    const amount = parseAmount(body.amount);
+    const reason = body.reason;
+
+    if (reason && String(reason).length > 255) {
+      throw new ApiError("reason must be at most 255 characters", 400);
+    }
+
+    const { initiated_by = "merchant" } = body;
     const merchantId = req.merchant!.id;
     const client = await pool.connect();
 
     try {
-      if (!payment_id || !amount) {
-        throw new ApiError("payment_id and amount required", 400);
-      }
-      if (amount <= 0) {
-        throw new ApiError("Refund amount must be greater than 0", 400);
-      }
       await client.query("BEGIN");
 
+      /*
+       * Lock the payment row so two concurrent refunds cannot both read the
+       * same remaining balance and refund past the captured amount.
+       */
       const paymentResult = await client.query(
-        "SELECT * FROM payments WHERE id = $1 AND merchant_id = $2",
-        [payment_id, merchantId]
+        "SELECT * FROM payments WHERE id = $1 AND merchant_id = $2 FOR UPDATE",
+        [paymentId, merchantId]
       );
       if (paymentResult.rows.length === 0) {
         throw new ApiError("Payment not found", 404);
@@ -54,7 +62,7 @@ router.post(
         `SELECT COALESCE(SUM(amount), 0) as total_refunded
          FROM refunds
          WHERE payment_id = $1 AND status != 'failed'`,
-        [payment_id]
+        [paymentId]
       );
       const totalRefunded = parseFloat(refundedResult.rows[0].total_refunded);
       const paymentAmount = parseFloat(payment.amount);
@@ -73,7 +81,7 @@ router.post(
         `INSERT INTO refunds (payment_id, amount, reason, status, initiated_by, processed_at)
          VALUES ($1, $2, $3, 'refunded', $4, NOW())
          RETURNING *`,
-        [payment_id, amount, reason || "Refund requested", initiated_by]
+        [paymentId, amount, reason || "Refund requested", initiated_by]
       );
 
       const refund = refundResult.rows[0];
@@ -82,21 +90,34 @@ router.post(
       const newStatus = isFullyRefunded(amount, remainingAmount)
         ? "refunded"
         : "partially_refunded";
-      await client.query("UPDATE payments SET status = $1 WHERE id = $2", [newStatus, payment_id]);
+      await client.query("UPDATE payments SET status = $1 WHERE id = $2", [newStatus, paymentId]);
 
       // update settlements - reduce net amount (cannot go below zero)
       await client.query(
         `UPDATE settlements
          SET net_amount = GREATEST(net_amount - $1, 0)
          WHERE payment_id = $2`,
-        [amount, payment_id]
+        [amount, paymentId]
       );
 
-      // audit log
+      // audit log — refund itself
       await client.query(
         `INSERT INTO audit_logs (entity_type, entity_id, action, new_value, performed_by)
          VALUES ('refund', $1, 'created', $2, $3)`,
         [refund.id, JSON.stringify(refund), merchantId]
+      );
+
+      // audit log — payment state change, so the payment timeline stays complete
+      await client.query(
+        `INSERT INTO audit_logs
+            (entity_type, entity_id, action, old_value, new_value, performed_by)
+         VALUES ('payment', $1, 'refunded', $2, $3, $4)`,
+        [
+          paymentId,
+          JSON.stringify({ status: payment.status }),
+          JSON.stringify({ status: newStatus, refund_id: refund.id, amount }),
+          merchantId,
+        ]
       );
       await client.query("COMMIT");
 
@@ -125,7 +146,7 @@ router.get(
   "/:id",
   apiKeyAuth,
   asyncHandler(async (req: MerchantRequest, res: Response) => {
-    const { id } = req.params;
+    const id = parsePositiveInt(req.params.id, "refund id");
     const merchantId = req.merchant!.id;
 
     const result = await pool.query(
@@ -149,9 +170,7 @@ router.get(
   protect,
   asyncHandler(async (req: MerchantRequest, res: Response) => {
     const merchantId = req.merchant!.id;
-    const page = parseInt((req.query.page as string) || "1");
-    const limit = parseInt((req.query.limit as string) || "10");
-    const offset = (page - 1) * limit;
+    const { page, limit, offset } = parsePagination(req.query.page, req.query.limit);
 
     const totalResult = await pool.query(
       `SELECT COUNT(*) FROM refunds r
