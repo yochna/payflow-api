@@ -2,7 +2,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 import app from "./app";
-import pool from "./config/db";
+import pool, { ensureSchema } from "./config/db";
 
 const REQUIRED_ENV = ["JWT_SECRET", "REFRESH_SECRET"];
 const missing = REQUIRED_ENV.filter((key) => !process.env[key]);
@@ -14,19 +14,34 @@ if (missing.length > 0) {
 
 const PORT = process.env.PORT || 5001;
 
-const server = app.listen(PORT, () => console.log(`🚀 PayFlow API running on port ${PORT}`));
+let server: ReturnType<typeof app.listen> | undefined;
+
+const start = async (): Promise<void> => {
+  try {
+    await ensureSchema();
+  } catch (err) {
+    console.error("Schema check failed:", err instanceof Error ? err.message : err);
+    process.exit(1);
+  }
+  server = app.listen(PORT, () => console.log(`🚀 PayFlow API running on port ${PORT}`));
+};
 
 const shutdown = (signal: string): void => {
   console.log(`${signal} received — draining connections`);
-  server.close(async () => {
-    try {
-      await pool.end();
-      process.exit(0);
-    } catch (err) {
-      console.error("Error while closing the database pool:", err);
-      process.exit(1);
-    }
-  });
+  const close = (): void => {
+    pool.end().then(
+      () => process.exit(0),
+      (err) => {
+        console.error("Error while closing the database pool:", err);
+        process.exit(1);
+      }
+    );
+  };
+  if (server) {
+    server.close(close);
+  } else {
+    close();
+  }
 
   // Never hang a deploy waiting for a stuck connection.
   setTimeout(() => {
@@ -37,3 +52,5 @@ const shutdown = (signal: string): void => {
 
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));
+
+void start();

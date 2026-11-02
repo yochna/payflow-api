@@ -22,4 +22,12 @@ const pool = new Pool(
 pool.on("connect", () => console.log("✅ Connected to PostgreSQL"));
 pool.on("error", (err) => console.error("❌ PostgreSQL error:", err.message));
 
+// Databases provisioned before this column existed still run the app, so
+// reconcile the one additive change on boot instead of failing audit reads.
+export const ensureSchema = async (): Promise<void> => {
+  await pool.query(
+    "ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()"
+  );
+};
+
 export default pool;
